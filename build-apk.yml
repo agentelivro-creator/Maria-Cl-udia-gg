@@ -1,0 +1,68 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Baixar three.js para dentro do app (funciona offline)
+        run: |
+          curl -fL -o www/three.min.js https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+          sed -i 's#https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js#three.min.js#' www/index.html
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Criar projeto Android
+        run: npx cap add android
+
+      - name: Ícones do app
+        run: npx @capacitor/assets generate --android
+
+      - name: Tela cheia e modo paisagem
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i '0,/<activity/s//<activity android:screenOrientation="sensorLandscape"/' $MANIFEST
+          STYLES=android/app/src/main/res/values/styles.xml
+          sed -i '/<style name="AppTheme.NoActionBar"/a\        <item name="android:windowFullscreen">true</item>\n        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>' $STYLES
+          sed -i '/<style name="AppTheme.NoActionBarLaunch"/a\        <item name="android:windowFullscreen">true</item>' $STYLES
+
+      - name: Sincronizar e compilar
+        run: |
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Renomear APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Aventura-do-Amor.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Aventura-do-Amor-APK
+          path: Aventura-do-Amor.apk
+
+      - name: Publicar em Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Aventura do Amor v${{ github.run_number }}
+          files: Aventura-do-Amor.apk
